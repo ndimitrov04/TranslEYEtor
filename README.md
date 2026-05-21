@@ -2,8 +2,14 @@
 An automatic AI powered screen translator.
 
 ## Current Version
-V0.1 - Alpha
-Added basic 480p screen capture on CTRL press.
+V0.2 - Alpha <br>
+- Translated text is now visualized on screen around the chosen translation area.
+- App now attempts to cache model weights and load them locally.
+- Model is now cached near the python script in .model_cache.
+
+## Version History
+V0.1 - Alpha <br>
+- Added basic 480p screen capture on CTRL press.
 
 ## System Requirements
 - An OS
