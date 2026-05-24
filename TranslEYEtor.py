@@ -23,7 +23,7 @@
 import subprocess
 import sys
 
-print("Starting TranslEYEtor V0.2 Alpha...")
+print("Starting TranslEYEtor V0.2.1 Alpha...")
 
 def abort_program():
     input("FAILURE: Press Enter to exit...")
@@ -57,7 +57,9 @@ import torch
 from transformers import (
     AutoModelForImageTextToText,
     AutoProcessor,
-    TextStreamer
+    TextStreamer,
+    AutoModelForCausalLM,
+    AutoTokenizer
 )
 from PIL import Image
 # Utilities
@@ -75,10 +77,11 @@ import ctypes   # For OS level window clickthrough
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 
-# Load MiniCPM V4.6
 # Define a permanent cache directory
 MODEL_CACHE_DIR = ".model_cache"
 os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+
+# Load MiniCPM V4.6 - Image-text to text model
 model_id = "openbmb/MiniCPM-V-4.6"
 try:
     # Attempt to load model from cache
@@ -90,7 +93,7 @@ try:
         local_files_only=True
     )
 
-    model = AutoModelForImageTextToText.from_pretrained(
+    ocr_model = AutoModelForImageTextToText.from_pretrained(
         model_id,
         cache_dir=MODEL_CACHE_DIR,
         local_files_only=True,
@@ -107,7 +110,7 @@ except Exception:
             model_id,
             cache_dir=MODEL_CACHE_DIR
         )
-        model = AutoModelForImageTextToText.from_pretrained(
+        ocr_model = AutoModelForImageTextToText.from_pretrained(
             model_id,
             cache_dir=MODEL_CACHE_DIR,
             torch_dtype=torch.float32,
@@ -116,8 +119,56 @@ except Exception:
         print("Download complete.")
     except Exception as e:
         # Abort program if model is not available online or offline
-        print("Transformer model not present and cannot be fetched from the web! (Check your internet connection.)")
+        print("Transformer Image-text-to-text model not present and cannot be fetched from the web! (Check your internet connection.)")
         abort_program()
+
+# Load Hy-MT2 - Text translation model
+model_id = "tencent/Hy-MT2-1.8B"
+try:
+    # Attempt to load model from cache
+    print(f"Trying to load {model_id} from offline cache...")
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_id, 
+        trust_remote_code=True,
+        cache_dir=MODEL_CACHE_DIR,
+        local_files_only=True
+    )
+    trans_model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        dtype=torch.float16,
+        device_map="auto",
+        trust_remote_code=True,
+        cache_dir=MODEL_CACHE_DIR,
+        local_files_only=True,
+    )
+    trans_model.to("cpu")
+    trans_model.eval()
+    print(f"Loaded {model_id} from local cache.")
+except Exception:
+    # If model is not available locally, attempt to download
+    print(f"Model [{model_id}] is not available offline.")
+    print("Attempting to download from huggingface...")
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id, 
+            trust_remote_code=True,
+            cache_dir=MODEL_CACHE_DIR
+        )
+        trans_model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+            cache_dir=MODEL_CACHE_DIR
+        )
+        #trans_model.to("cpu")
+        trans_model.eval()
+        print("Download complete.")
+    except Exception as e:
+        # Abort program if model is not available online or offline
+        print("Transformer text translation model not present and cannot be fetched from the web! (Check your internet connection.)")
+        abort_program()
+
 
 # Options
 # User options
@@ -162,12 +213,14 @@ class TranslationWorker(QObject):
             print(f"Awaiting {translation_hotkey} press...")
 
             try:
+                # Capture screen
                 keyboard.wait(translation_hotkey)
                 capture_screen(IMAGE_NAME)
                 image_url = IMAGE_NAME
 
                 print("Captured image. Parsing...")
 
+                # Convert image text to text via MiniCPM
                 image = Image.open(image_url).convert("RGB")
                 messages = [
                     {
@@ -176,17 +229,16 @@ class TranslationWorker(QObject):
                             {
                                 "type": "image",
                                 "image": image
-                                #"url": image_url
                             },
                             {
                                 "type": "text",
-                                "text": f"Translate all of the text on the image to {native_language}. Output only the translated text. No comments or explanations. Any text outside the translation is forbidden.",
+                                "text": f"Output ONLY the text in the image. Do not output anything else. No explanations.",
                             },
                         ],
                     }
                 ]
 
-                print("Preparing inputs...")
+                print(f"{ocr_model.name_or_path}///Preparing inputs...")
                 inputs = processor.apply_chat_template(
                     messages,
                     tokenize=True,
@@ -194,32 +246,55 @@ class TranslationWorker(QObject):
                     return_dict=True,
                     return_tensors="pt",
                     downsample_mode="16x",
-                    max_slice_nums=1
+                    max_slice_nums=3
                 )
 
-                print("///Generating...\n")
+                # Output text word by word (debug)
+                print(f"{ocr_model.name_or_path}///Converting image-text to plaintext...\n")
                 streamer = TextStreamer(
                     processor.tokenizer,
                     skip_prompt=True,
                     skip_special_tokens=True,
                 )
                 with torch.inference_mode():
-                    output = model.generate(
+                    output = ocr_model.generate(
                         **inputs,
                         streamer=streamer,
                         max_new_tokens=MAX_TOKENS,
                         do_sample=False
                     )
-                print("///Generation end.")
+                print(f"{ocr_model.name_or_path}///Text conversion complete.")
 
                 decoded_output = processor.tokenizer.decode(output[0], skip_special_tokens=True)
                 terminator_pos = decoded_output.find(TERMINATOR)
-                answer = decoded_output[terminator_pos + len(TERMINATOR) : ]
+                source_text = decoded_output[terminator_pos + len(TERMINATOR) : ]
 
-                self.translation_ready.emit(answer, 
+                # Pass on answer to translation model
+                print(f"{trans_model.name_or_path}///Preparing inputs...")
+                translation_prompt = f"Translate: {source_text} to {native_language}."
+                messages = [{"role": "user", "content": translation_prompt}]
+                inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(trans_model.device)
+
+                print(f"{trans_model.name_or_path}///Translating image-text to {native_language}...")
+                with torch.no_grad():
+                    outputs = trans_model.generate(
+                        **inputs,
+                        max_new_tokens=MAX_TOKENS
+                    )
+                print(f"{trans_model.name_or_path}///Translation complete.")
+
+                response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
+
+                print(response)
+
+                # Print final output to screen
+                self.translation_ready.emit(response, 
                                             (screenshot_pos[0] - capture_area, 
                                              screenshot_pos[1] - capture_area)
                                             )
+
+                # All of this takes around 38 seconds for like 16 tokens on a Ryzen 5 5600X. 
+                # Not good...
 
             except Exception as e:
                 print(e)
