@@ -22,8 +22,10 @@
 
 import subprocess
 import sys
+import math
+import time
 
-print("Starting TranslEYEtor V0.2.1 Alpha...")
+print("Starting TranslEYEtor V0.2.2 Alpha...")
 
 def abort_program():
     input("FAILURE: Press Enter to exit...")
@@ -66,8 +68,9 @@ from PIL import Image
 import pyautogui
 import keyboard
 # PyQt6 dependencies
-from PyQt6.QtCore import Qt, QObject, QThread, QSize, pyqtSignal
+from PyQt6.QtCore import Qt, QObject, QThread, QSize, QTimer, QPropertyAnimation, QEasingCurve, pyqtProperty, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QLabel, QWidget
+from PyQt6.QtGui import QPainter, QPen, QColor
 
 # System
 import os       # For CWD
@@ -200,7 +203,7 @@ print(f"How to use:\nPress {translation_hotkey} to translate a {capture_area} pi
 # AI Translation Module
 class TranslationWorker(QObject):
 
-    # This signal will be emitted when translation is ready
+    screenshot_ready = pyqtSignal(tuple)
     translation_ready = pyqtSignal(str, tuple)
 
     def __init__(self):
@@ -216,7 +219,13 @@ class TranslationWorker(QObject):
                 # Capture screen
                 keyboard.wait(translation_hotkey)
                 capture_screen(IMAGE_NAME)
+
+                self.screenshot_ready.emit((screenshot_pos[0] - capture_area, 
+                                            screenshot_pos[1] - capture_area))
+
                 image_url = IMAGE_NAME
+
+                start_time = time.time()
 
                 print("Captured image. Parsing...")
 
@@ -293,6 +302,8 @@ class TranslationWorker(QObject):
                                              screenshot_pos[1] - capture_area)
                                             )
 
+                print(f"Finished in {time.time() - start_time} seconds.")
+
                 # All of this takes around 38 seconds for like 16 tokens on a Ryzen 5 5600X. 
                 # Not good...
 
@@ -308,7 +319,7 @@ GWL_EXSTYLE = -20
 WS_EX_LAYERED = 0x00080000
 WS_EX_TRANSPARENT = 0x00000020
 
-# GUI Window Module
+# GUI Text Window Module
 class TranslationWindow(QWidget):
     def __init__(self, text):
         super().__init__()
@@ -323,6 +334,8 @@ class TranslationWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_InputMethodTransparent)
     
         label = QLabel(text, self)
+        label.setWordWrap(True)
+        label.setFixedWidth((capture_area * 2) - 20)
         label.move(0, 0)
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         label.setAttribute(Qt.WidgetAttribute.WA_InputMethodTransparent)
@@ -349,21 +362,118 @@ class TranslationWindow(QWidget):
             styles | WS_EX_LAYERED | WS_EX_TRANSPARENT
         )
 
+# GUI Screenshot Outline Module
+class ScreenshotFrame(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_InputMethodTransparent)
+
+        self.resize(capture_area*2, capture_area*2)
+
+        # Loading indicator via pulsing effect, updates every 50ms
+        self._pulse_factor = 0.9
+        self._pulsing = True
+        self.pulse_timer = QTimer(self)
+        self.pulse_timer.timeout.connect(self.update_pulse)
+        self.pulse_timer.start(50)
+
+    # Ensure window is clickthrough on OS level when shown
+    def showEvent(self, event):
+        super().showEvent(event)
+
+        hwnd = int(self.winId())
+
+        styles = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+
+        ctypes.windll.user32.SetWindowLongW(
+            hwnd,
+            GWL_EXSTYLE,
+            styles | WS_EX_LAYERED | WS_EX_TRANSPARENT
+        )
+
+    # Pulsing effect logic
+    @pyqtProperty(float)
+    def pulse_factor(self):
+        return self._pulse_factor
+    @pulse_factor.setter
+    def pulse_factor(self, value):
+        self._pulse_factor = max(0.3, min(1.0, value))
+        self.update()
+    def update_pulse(self):
+        if self._pulsing:
+            # Cycle from 0.3 to 1.0 and back using sine wave
+            self._pulse_factor = 0.6 + 0.4 * math.sin(time.time() * 4)
+            self.update()
+    
+    # Draw rect and apply pulsing effect to rect pen
+    def paintEvent(self, event):
+        painter = QPainter(self)
+
+        base_color = QColor(70, 140, 255)
+        base_color.setAlphaF(self._pulse_factor) # Apply pulsing effect
+        
+        pen = QPen(base_color, 3)
+        painter.setPen(pen)
+        painter.drawRect(3, 3, self.width() - 6, self.height() - 6)
+        painter.end()
+
+    # Fade out frame
+    def start_fade_out(self):
+        # Stop pulsing
+        self._pulsing = False
+        self.pulse_timer.stop()
+        self._pulse_factor = 1.0
+        self.update()
+
+        # Create animation for the "windowOpacity" property
+        self.animation = QPropertyAnimation(self, b"windowOpacity")
+        self.animation.setDuration(2500)
+        self.animation.setStartValue(1.0)
+        self.animation.setEndValue(0.0)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+    
+        # Connect finished signal to close or cleanup if needed
+        self.animation.finished.connect(self.cleanup)
+    
+        self.animation.start()
+
+    def cleanup(self):
+        self.close()
+
 
 
 # Main App
 
 app = QApplication(sys.argv)
-text_windows = []
+frames = []
+windows = []
+
+# Called from TranslationWorker thread via screenhot_ready signal
+# Shows captured screen area
+def show_frame(coords):
+    frames.clear()                     # Destroy previous windows
+    frame = ScreenshotFrame()
+    frame.move(coords[0], coords[1])
+    frame.show()
+    frames.append(frame)
 
 # Called from TranslationWorker thread via translation_ready signal
 # Shows translated text in a new window near the captured screenshot
 def show_translation(text, coords):
-    text_windows.clear()                # Destroy previous windows
+    windows.clear()
+    frames[len(frames) - 1].start_fade_out()
     window = TranslationWindow(text)
     window.move(coords[0], coords[1])
     window.show()
-    text_windows.append(window)
+    windows.append(window)
 
 # Initialize worker & thread
 worker = TranslationWorker()
@@ -371,6 +481,7 @@ thread = QThread()
 worker.moveToThread(thread)
 
 # Connect signal to GUI slot
+worker.screenshot_ready.connect(show_frame)
 worker.translation_ready.connect(show_translation)
 thread.started.connect(worker.run)
 
