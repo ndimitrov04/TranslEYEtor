@@ -25,7 +25,7 @@ import sys
 import math
 import time
 
-print("Starting TranslEYEtor V0.2.2 Alpha...")
+print("Starting TranslEYEtor V0.2.4 Alpha...")
 
 def abort_program():
     input("FAILURE: Press Enter to exit...")
@@ -42,6 +42,7 @@ try:
     install("torchvision")
     install("torchcodec")
     install("transformers[torch]")
+    install("easyocr")
     # Utilities
     install("pyautogui")    # Mouse macros, screenshots
     install("keyboard")     # Keyboard macros and detection
@@ -55,6 +56,7 @@ except Exception:
 
 # Import installed dependencies
 # AI
+import easyocr
 import torch
 from transformers import (
     AutoModelForImageTextToText,
@@ -83,47 +85,6 @@ os.chdir(script_dir)
 # Define a permanent cache directory
 MODEL_CACHE_DIR = ".model_cache"
 os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
-
-# Load MiniCPM V4.6 - Image-text to text model
-model_id = "openbmb/MiniCPM-V-4.6"
-try:
-    # Attempt to load model from cache
-    print(f"Trying to load {model_id} from offline cache...")
-
-    processor = AutoProcessor.from_pretrained(
-        model_id,
-        cache_dir=MODEL_CACHE_DIR,
-        local_files_only=True
-    )
-
-    ocr_model = AutoModelForImageTextToText.from_pretrained(
-        model_id,
-        cache_dir=MODEL_CACHE_DIR,
-        local_files_only=True,
-        torch_dtype=torch.float32,
-        device_map="cpu"
-    )
-    print(f"Loaded {model_id} from local cache.")
-except Exception:
-    # If model is not available locally, attempt to download
-    print(f"Model [{model_id}] is not available offline.")
-    print("Attempting to download from huggingface...")
-    try:
-        processor = AutoProcessor.from_pretrained(
-            model_id,
-            cache_dir=MODEL_CACHE_DIR
-        )
-        ocr_model = AutoModelForImageTextToText.from_pretrained(
-            model_id,
-            cache_dir=MODEL_CACHE_DIR,
-            torch_dtype=torch.float32,
-            device_map="cpu"
-        )
-        print("Download complete.")
-    except Exception as e:
-        # Abort program if model is not available online or offline
-        print("Transformer Image-text-to-text model not present and cannot be fetched from the web! (Check your internet connection.)")
-        abort_program()
 
 # Load Hy-MT2 - Text translation model
 model_id = "tencent/Hy-MT2-1.8B"
@@ -200,17 +161,26 @@ def capture_screen(image_name):
 
 print(f"How to use:\nPress {translation_hotkey} to translate a {capture_area} pixel area around your mouse cursor...")
 
+frames = []
+windows = []
+
 # AI Translation Module
 class TranslationWorker(QObject):
 
     screenshot_ready = pyqtSignal(tuple)
-    translation_ready = pyqtSignal(str, tuple)
+    translation_ready = pyqtSignal(str, tuple, int)
+    translation_finished = pyqtSignal()
 
     def __init__(self):
         super().__init__()
         self.running = True
 
     def run(self):
+
+        # Example language list
+        lang_list=["ru","rs_cyrillic","be","bg","uk","mn","en"]
+        easy_reader = easyocr.Reader(lang_list)
+
         while self.running:
 
             print(f"Awaiting {translation_hotkey} press...")
@@ -218,6 +188,9 @@ class TranslationWorker(QObject):
             try:
                 # Capture screen
                 keyboard.wait(translation_hotkey)
+                windows.clear()
+                frames.clear()
+                time.sleep(0.2)
                 capture_screen(IMAGE_NAME)
 
                 self.screenshot_ready.emit((screenshot_pos[0] - capture_area, 
@@ -229,83 +202,44 @@ class TranslationWorker(QObject):
 
                 print("Captured image. Parsing...")
 
-                # Convert image text to text via MiniCPM
-                image = Image.open(image_url).convert("RGB")
-                messages = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "image": image
-                            },
-                            {
-                                "type": "text",
-                                "text": f"Output ONLY the text in the image. Do not output anything else. No explanations.",
-                            },
-                        ],
-                    }
-                ]
-
-                print(f"{ocr_model.name_or_path}///Preparing inputs...")
-                inputs = processor.apply_chat_template(
-                    messages,
-                    tokenize=True,
-                    add_generation_prompt=True,
-                    return_dict=True,
-                    return_tensors="pt",
-                    downsample_mode="16x",
-                    max_slice_nums=3
-                )
-
-                # Output text word by word (debug)
-                print(f"{ocr_model.name_or_path}///Converting image-text to plaintext...\n")
-                streamer = TextStreamer(
-                    processor.tokenizer,
-                    skip_prompt=True,
-                    skip_special_tokens=True,
-                )
-                with torch.inference_mode():
-                    output = ocr_model.generate(
-                        **inputs,
-                        streamer=streamer,
-                        max_new_tokens=MAX_TOKENS,
-                        do_sample=False
-                    )
-                print(f"{ocr_model.name_or_path}///Text conversion complete.")
-
-                decoded_output = processor.tokenizer.decode(output[0], skip_special_tokens=True)
-                terminator_pos = decoded_output.find(TERMINATOR)
-                source_text = decoded_output[terminator_pos + len(TERMINATOR) : ]
+                # Convert image text to text via EasyOCR
+                ocr_output = easy_reader.readtext(IMAGE_NAME, paragraph=True)
 
                 # Pass on answer to translation model
-                print(f"{trans_model.name_or_path}///Preparing inputs...")
-                translation_prompt = f"Translate: {source_text} to {native_language}."
-                messages = [{"role": "user", "content": translation_prompt}]
-                inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(trans_model.device)
+                for text_item in ocr_output:
 
-                print(f"{trans_model.name_or_path}///Translating image-text to {native_language}...")
-                with torch.no_grad():
-                    outputs = trans_model.generate(
-                        **inputs,
-                        max_new_tokens=MAX_TOKENS
-                    )
-                print(f"{trans_model.name_or_path}///Translation complete.")
+                    source_text = text_item[1]
 
-                response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
+                    print(f"{trans_model.name_or_path}///Preparing input...")
+                    translation_prompt = f"Translate: {source_text} to {native_language}."
+                    messages = [{"role": "user", "content": translation_prompt}]
+                    inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(trans_model.device)
 
-                print(response)
+                    print(f"{trans_model.name_or_path}///Translating input to {native_language}...")
+                    with torch.no_grad():
+                        outputs = trans_model.generate(
+                            **inputs,
+                            max_new_tokens=MAX_TOKENS
+                        )
+                    print(f"{trans_model.name_or_path}///Translation complete.")
 
-                # Print final output to screen
-                self.translation_ready.emit(response, 
-                                            (screenshot_pos[0] - capture_area, 
-                                             screenshot_pos[1] - capture_area)
-                                            )
+                    response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
+
+                    print(response)
+                    
+                    top_left = text_item[0][0]
+                    bottom_right = text_item[0][2]
+
+                    # Print final output to screen
+                    self.translation_ready.emit(response, 
+                                                (screenshot_pos[0] - capture_area + top_left[0], 
+                                                screenshot_pos[1] - capture_area + top_left[1]),
+                                                bottom_right[0] - top_left[0]
+                                                )
+
+                self.translation_finished.emit()
 
                 print(f"Finished in {time.time() - start_time} seconds.")
-
-                # All of this takes around 38 seconds for like 16 tokens on a Ryzen 5 5600X. 
-                # Not good...
 
             except Exception as e:
                 print(e)
@@ -321,7 +255,7 @@ WS_EX_TRANSPARENT = 0x00000020
 
 # GUI Text Window Module
 class TranslationWindow(QWidget):
-    def __init__(self, text):
+    def __init__(self, text, width):
         super().__init__()
 
         self.setWindowFlags(
@@ -335,7 +269,7 @@ class TranslationWindow(QWidget):
     
         label = QLabel(text, self)
         label.setWordWrap(True)
-        label.setFixedWidth((capture_area * 2) - 20)
+        label.setFixedWidth(width)
         label.move(0, 0)
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         label.setAttribute(Qt.WidgetAttribute.WA_InputMethodTransparent)
@@ -453,13 +387,10 @@ class ScreenshotFrame(QWidget):
 # Main App
 
 app = QApplication(sys.argv)
-frames = []
-windows = []
 
 # Called from TranslationWorker thread via screenhot_ready signal
 # Shows captured screen area
 def show_frame(coords):
-    frames.clear()                     # Destroy previous windows
     frame = ScreenshotFrame()
     frame.move(coords[0], coords[1])
     frame.show()
@@ -467,13 +398,18 @@ def show_frame(coords):
 
 # Called from TranslationWorker thread via translation_ready signal
 # Shows translated text in a new window near the captured screenshot
-def show_translation(text, coords):
-    windows.clear()
-    frames[len(frames) - 1].start_fade_out()
-    window = TranslationWindow(text)
-    window.move(coords[0], coords[1])
+def show_translation(text, coords, width):
+    window = TranslationWindow(text, width)
+    try:
+        window.move(coords[0], coords[1])
+    except Exception as e:
+        print(e)
     window.show()
     windows.append(window)
+
+def translation_done():
+    if len(frames) > 0:
+        frames[0].start_fade_out()
 
 # Initialize worker & thread
 worker = TranslationWorker()
@@ -483,6 +419,7 @@ worker.moveToThread(thread)
 # Connect signal to GUI slot
 worker.screenshot_ready.connect(show_frame)
 worker.translation_ready.connect(show_translation)
+worker.translation_finished.connect(translation_done)
 thread.started.connect(worker.run)
 
 # Start the background loop
