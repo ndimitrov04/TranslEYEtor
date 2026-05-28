@@ -25,7 +25,7 @@ import sys
 import math
 import time
 
-print("Starting TranslEYEtor V0.2.4 Alpha...")
+print("Starting TranslEYEtor V0.2.4.2 Alpha...")
 
 def abort_program():
     input("FAILURE: Press Enter to exit...")
@@ -138,28 +138,29 @@ except Exception:
 # User options
 native_language = "English"
 translation_hotkey = "ctrl"
-capture_area = 240 # Capture 480p image
+#capture_area = 240 # Capture 480p image
 # System options
 IMAGE_NAME = ".screenshot.png"
-MAX_TOKENS = 64                 # Small token size for testing
-TERMINATOR = f"</think>\n\n"    # Mini CPM output terminator;
+MAX_TOKENS = 256                # Small token size for testing
+#TERMINATOR = f"</think>\n\n"    # Mini CPM output terminator;
                                 # Anything before this is either AI thought or user input data
 
 # Capture screen around current mouse position
-def capture_screen(image_name):
-    global screenshot_pos
-    screenshot_pos = pyautogui.position()
+def capture_screen(image_name, top_left, bottom_right):
+    screenshot_pos = (top_left[0], top_left[1], bottom_right[0], bottom_right[1])
+    capture_area = (bottom_right[0] - top_left[0], bottom_right[1] - top_left[1])
     pyautogui.screenshot(
         image_name,
         region=(
-            screenshot_pos[0] - capture_area,
-            screenshot_pos[1] - capture_area, 
-            capture_area * 2,
-            capture_area * 2
+            top_left[0],
+            top_left[1], 
+            bottom_right[0] - top_left[0],
+            bottom_right[1] - top_left[1]
             )
     )
+    return screenshot_pos, capture_area
 
-print(f"How to use:\nPress {translation_hotkey} to translate a {capture_area} pixel area around your mouse cursor...")
+#print(f"How to use:\nPress {translation_hotkey} to translate a {capture_area} pixel area around your mouse cursor...")
 
 frames = []
 windows = []
@@ -167,8 +168,8 @@ windows = []
 # AI Translation Module
 class TranslationWorker(QObject):
 
-    screenshot_ready = pyqtSignal(tuple)
-    translation_ready = pyqtSignal(str, tuple, int)
+    screenshot_ready = pyqtSignal(tuple, tuple)
+    translation_ready = pyqtSignal(str, tuple, tuple, int)
     translation_finished = pyqtSignal()
 
     def __init__(self):
@@ -186,15 +187,22 @@ class TranslationWorker(QObject):
             print(f"Awaiting {translation_hotkey} press...")
 
             try:
-                # Capture screen
+                # Capture screen top_left
                 keyboard.wait(translation_hotkey)
+                top_left = pyautogui.position()
+                print("Captured top-left; Awaiting CTRL press...")
+                # Capture screen bottom_right
+                keyboard.wait(translation_hotkey)
+                bottom_right = pyautogui.position()
                 windows.clear()
                 frames.clear()
                 time.sleep(0.2)
-                capture_screen(IMAGE_NAME)
+                screenshot_pos, capture_area = capture_screen(IMAGE_NAME, top_left, bottom_right)
 
-                self.screenshot_ready.emit((screenshot_pos[0] - capture_area, 
-                                            screenshot_pos[1] - capture_area))
+                self.screenshot_ready.emit(
+                    (screenshot_pos[0], screenshot_pos[1]),
+                    (capture_area[0], capture_area[1])
+                )
 
                 image_url = IMAGE_NAME
 
@@ -211,7 +219,7 @@ class TranslationWorker(QObject):
                     source_text = text_item[1]
 
                     print(f"{trans_model.name_or_path}///Preparing input...")
-                    translation_prompt = f"Translate: {source_text} to {native_language}."
+                    translation_prompt = f"Translate without explanation to {native_language}: {source_text}"
                     messages = [{"role": "user", "content": translation_prompt}]
                     inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(trans_model.device)
 
@@ -230,12 +238,19 @@ class TranslationWorker(QObject):
                     top_left = text_item[0][0]
                     bottom_right = text_item[0][2]
 
+                    position = (screenshot_pos[0] + top_left[0], screenshot_pos[1] + top_left[1])
+                    textbox_width = bottom_right[0] - top_left[0]
+                    textbox_height = bottom_right[1] - top_left[1]
+                    character_count = len(response)
+                    font_size = int(((textbox_width * textbox_height) / (character_count * 0.9)) ** 0.5)
+
                     # Print final output to screen
-                    self.translation_ready.emit(response, 
-                                                (screenshot_pos[0] - capture_area + top_left[0], 
-                                                screenshot_pos[1] - capture_area + top_left[1]),
-                                                bottom_right[0] - top_left[0]
-                                                )
+                    self.translation_ready.emit(
+                        response, 
+                        position,
+                        (textbox_width, textbox_height),
+                        font_size
+                    )
 
                 self.translation_finished.emit()
 
@@ -255,7 +270,7 @@ WS_EX_TRANSPARENT = 0x00000020
 
 # GUI Text Window Module
 class TranslationWindow(QWidget):
-    def __init__(self, text, width):
+    def __init__(self, text, dimensions, font_size):
         super().__init__()
 
         self.setWindowFlags(
@@ -269,19 +284,20 @@ class TranslationWindow(QWidget):
     
         label = QLabel(text, self)
         label.setWordWrap(True)
-        label.setFixedWidth(width)
+        label.setFixedWidth(dimensions[0] + 8)
+        label.setFixedHeight(dimensions[1] + 8)
         label.move(0, 0)
         label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         label.setAttribute(Qt.WidgetAttribute.WA_InputMethodTransparent)
         # White text on black translucent background
-        label.setStyleSheet("""
+        label.setStyleSheet(f"""
             color: white;
+            font-size: {font_size+1}px;
             background: rgba(0, 0, 0, 160);
             padding: 4px;
             border-radius: 6px;
         """)
-        label.adjustSize()
-    
+
     # Ensure window is clickthrough on OS level when shown
     def showEvent(self, event):
         super().showEvent(event)
@@ -298,7 +314,7 @@ class TranslationWindow(QWidget):
 
 # GUI Screenshot Outline Module
 class ScreenshotFrame(QWidget):
-    def __init__(self):
+    def __init__(self, capture_area):
         super().__init__()
 
         self.setWindowFlags(
@@ -310,7 +326,7 @@ class ScreenshotFrame(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_InputMethodTransparent)
 
-        self.resize(capture_area*2, capture_area*2)
+        self.resize(capture_area[0], capture_area[1])
 
         # Loading indicator via pulsing effect, updates every 50ms
         self._pulse_factor = 0.9
@@ -390,16 +406,16 @@ app = QApplication(sys.argv)
 
 # Called from TranslationWorker thread via screenhot_ready signal
 # Shows captured screen area
-def show_frame(coords):
-    frame = ScreenshotFrame()
+def show_frame(coords, capture_area):
+    frame = ScreenshotFrame(capture_area)
     frame.move(coords[0], coords[1])
     frame.show()
     frames.append(frame)
 
 # Called from TranslationWorker thread via translation_ready signal
 # Shows translated text in a new window near the captured screenshot
-def show_translation(text, coords, width):
-    window = TranslationWindow(text, width)
+def show_translation(text, coords, dimensions, font_size):
+    window = TranslationWindow(text, dimensions, font_size)
     try:
         window.move(coords[0], coords[1])
     except Exception as e:
