@@ -25,7 +25,7 @@ import sys
 import math
 import time
 
-print("Starting TranslEYEtor V0.2.4.2 Alpha...")
+print("Starting TranslEYEtor V0.2.5 Alpha...")
 
 def abort_program():
     input("FAILURE: Press Enter to exit...")
@@ -34,14 +34,50 @@ def abort_program():
 def install(package):
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
+# Detect GPU avalability and type
+subprocess.check_call([sys.executable, "-m", "pip", "install", "wmi", "pywin32"])
+import wmi
+c = wmi.WMI()
+gpu_found = False
+for gpu in c.Win32_VideoController():
+    name = gpu.Name
+    name = name.lower()
+    if "nvidia" in name:
+        print("NVIDIA GPU:", gpu.name)
+        print("Installing llama-cpp /w CUDA...")
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install",
+            "llama-cpp-python",
+            "--extra-index-url",
+            "https://abetlen.github.io/llama-cpp-python/whl/cu124"
+        ])
+        gpu_found = True
+        break
+    elif "amd" in name or "radeon" in name:
+        print("AMD GPU:", gpu.name)
+        print("Installing llama-cpp /w VULKAN...")
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install",
+            "llama-cpp-python",
+            "--extra-index-url",
+            "https://abetlen.github.io/llama-cpp-python/whl/vulkan"
+        ])
+        gpu_found = True
+        break
+    else:
+        print("Unsupported GPU:", gpu.name)
+
+if not gpu_found:
+    print("No compatible GPUs found.")
+    print("Installing llama-cpp for CPU infernece...")
+    subprocess.check_call([
+        sys.executable, "-m", "pip", "install",
+        "llama-cpp-python"
+    ])
 
 # Install required packages
 try:
     # AI Dependencies
-    install("torch[cpu]")
-    install("torchvision")
-    install("torchcodec")
-    install("transformers[torch]")
     install("easyocr")
     # Utilities
     install("pyautogui")    # Mouse macros, screenshots
@@ -57,14 +93,7 @@ except Exception:
 # Import installed dependencies
 # AI
 import easyocr
-import torch
-from transformers import (
-    AutoModelForImageTextToText,
-    AutoProcessor,
-    TextStreamer,
-    AutoModelForCausalLM,
-    AutoTokenizer
-)
+from llama_cpp import Llama
 from PIL import Image
 # Utilities
 import pyautogui
@@ -87,51 +116,14 @@ MODEL_CACHE_DIR = ".model_cache"
 os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
 
 # Load Hy-MT2 - Text translation model
-model_id = "tencent/Hy-MT2-1.8B"
+model_id = ".model_cache/Hy-MT2-1.8B-Q8_0.gguf"
 try:
-    # Attempt to load model from cache
-    print(f"Trying to load {model_id} from offline cache...")
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_id, 
-        trust_remote_code=True,
-        cache_dir=MODEL_CACHE_DIR,
-        local_files_only=True
-    )
-    trans_model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True,
-        cache_dir=MODEL_CACHE_DIR,
-        local_files_only=True,
-    )
-    trans_model.to("cpu")
-    trans_model.eval()
-    print(f"Loaded {model_id} from local cache.")
-except Exception:
-    # If model is not available locally, attempt to download
-    print(f"Model [{model_id}] is not available offline.")
-    print("Attempting to download from huggingface...")
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_id, 
-            trust_remote_code=True,
-            cache_dir=MODEL_CACHE_DIR
-        )
-        trans_model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            dtype=torch.float16,
-            device_map="auto",
-            trust_remote_code=True,
-            cache_dir=MODEL_CACHE_DIR
-        )
-        #trans_model.to("cpu")
-        trans_model.eval()
-        print("Download complete.")
-    except Exception as e:
-        # Abort program if model is not available online or offline
-        print("Transformer text translation model not present and cannot be fetched from the web! (Check your internet connection.)")
-        abort_program()
+    translation_model = Llama(model_path=model_id, n_gpu_layers=0)
+except Exception as e:
+    # Abort program if model is not available online or offline
+    print("Transformer text translation model not present and cannot be fetched from the web! (Check your internet connection.)")
+    print("ERROR: " + str(e))
+    abort_program()
 
 
 # Options
@@ -218,21 +210,10 @@ class TranslationWorker(QObject):
 
                     source_text = text_item[1]
 
-                    print(f"{trans_model.name_or_path}///Preparing input...")
+                    print(f"Hy-MT2-1.8B-Q8_0.gguf /// Translating text chunk to {native_language}...")
                     translation_prompt = f"Translate without explanation to {native_language}: {source_text}"
-                    messages = [{"role": "user", "content": translation_prompt}]
-                    inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(trans_model.device)
-
-                    print(f"{trans_model.name_or_path}///Translating input to {native_language}...")
-                    with torch.no_grad():
-                        outputs = trans_model.generate(
-                            **inputs,
-                            max_new_tokens=MAX_TOKENS
-                        )
-                    print(f"{trans_model.name_or_path}///Translation complete.")
-
-                    response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
-
+                    full_response = translation_model(translation_prompt, max_tokens=MAX_TOKENS)
+                    response = full_response["choices"][0]["text"].strip()
                     print(response)
                     
                     top_left = text_item[0][0]
