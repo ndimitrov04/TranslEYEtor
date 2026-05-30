@@ -7,8 +7,8 @@
                                                                                                                       
 
 # This is an experimental screen translation app.
-# This program uses a local AI OCR model to translate
-# screen text in-place.
+# This program uses two local AI models (OCR + TranslationLLM)
+# in order to translate screen text in-place.
 
 # How to use:
 #    1. Mouse over any on screen text
@@ -17,15 +17,23 @@
 #    4. A translation will appear over your chosen text
 
 # This program requires:
+#    - Windows 10/11
 #    - Python 3.13
 #    - PIP
+
+# This program will automatically download:
+#   - Vulkan SDK (if AMD GPU is detected)
+#   - Llama.cpp
+#   - The Hy-MT2 text translation model from huggingface
+#   - A TON of python packages
 
 import subprocess
 import sys
 import math
 import time
+import os
 
-print("Starting TranslEYEtor V0.2.5 Alpha...")
+print("Starting TranslEYEtor V0.3.0 Alpha...")
 
 def abort_program():
     input("FAILURE: Press Enter to exit...")
@@ -34,55 +42,84 @@ def abort_program():
 def install(package):
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
-# Detect GPU avalability and type
-subprocess.check_call([sys.executable, "-m", "pip", "install", "wmi", "pywin32"])
-import wmi
-c = wmi.WMI()
-gpu_found = False
-for gpu in c.Win32_VideoController():
-    name = gpu.Name
-    name = name.lower()
-    if "nvidia" in name:
-        print("NVIDIA GPU:", gpu.name)
-        print("Installing llama-cpp /w CUDA...")
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install",
-            "llama-cpp-python",
-            "--extra-index-url",
-            "https://abetlen.github.io/llama-cpp-python/whl/cu124"
-        ])
-        gpu_found = True
-        break
-    elif "amd" in name or "radeon" in name:
-        print("AMD GPU:", gpu.name)
-        print("Installing llama-cpp /w VULKAN...")
-        subprocess.check_call([
-            sys.executable, "-m", "pip", "install",
-            "llama-cpp-python",
-            "--extra-index-url",
-            "https://abetlen.github.io/llama-cpp-python/whl/vulkan"
-        ])
-        gpu_found = True
-        break
-    else:
-        print("Unsupported GPU:", gpu.name)
-
-if not gpu_found:
-    print("No compatible GPUs found.")
+def install_cpu():
     print("Installing llama-cpp for CPU infernece...")
     subprocess.check_call([
         sys.executable, "-m", "pip", "install",
         "llama-cpp-python"
     ])
 
+# Detect GPU avalability and type; Install Llama.cpp for NVidia/AMD gpu (CUDA or Vulkan)
+# WARNING: Vulkan wheel requires VulkanSDK to be built: https://vulkan.lunarg.com/sdk/home
+# CUDA wheel is premade. Building Vulkan wheel may take a LONG time.
+no_gpu = True
+try:
+    subprocess.check_call([
+        sys.executable, "-m", "pip", "install", 
+        "wmi", 
+        "pywin32"
+    ])
+    import wmi
+    c = wmi.WMI()
+    for gpu in c.Win32_VideoController():
+        name = gpu.Name
+        name = name.lower()
+        if "nvidia" in name:
+            # NVidia always has it easy, wheel is premade and ready to use...
+            print("NVIDIA GPU:", gpu.name)
+            print("Installing llama-cpp /w CUDA...")
+            print("Fetching CUDA wheel...")
+
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install",
+                "llama-cpp-python",
+                "--extra-index-url",
+                "https://abetlen.github.io/llama-cpp-python/whl/cu124"
+            ])
+            no_gpu = False
+            break
+        elif "amd" in name or "radeon" in name:
+            # This requires the vulkan SDK, wheel needs to be built from scartch. NOT GOOD.
+            # This process may take a long time.
+            # https://vulkan.lunarg.com/sdk/home
+            print("AMD GPU:", gpu.name)
+            print("Fetching VulkanSDK (required to build Vulkan wheel)...")
+            subprocess.check_call([
+                "winget", "install", "-e", "--id",
+                "KhronosGroup.VulkanSDK"
+            ])
+
+            print("Installing llama-cpp /w VULKAN...")
+            print("NOTICE: Building the Vulkan wheel may take a LONG time.")
+            env = os.environ.copy()
+            env["CMAKE_ARGS"] = "-DGGML_VULKAN=on"
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install",
+                "llama-cpp-python"
+            ], env=env)
+            no_gpu = False
+            break
+        else:
+            print("Unsupported GPU:", gpu.name)
+except Exception as e:
+    print("ERROR: " + str(e))
+    print("Error while installing llama with GPU support, falling back to CPU...")
+    no_gpu = True
+
+if no_gpu:
+    print("No compatible GPUs found.")
+    install_cpu()
+
+
 # Install required packages
 try:
     # AI Dependencies
     install("easyocr")
     # Utilities
-    install("pyautogui")    # Mouse macros, screenshots
-    install("keyboard")     # Keyboard macros and detection
-    install("PyQt6")        # GUI library
+    install("huggingface_hub")  # AI model downloading
+    install("pyautogui")        # Mouse macros, screenshots
+    install("keyboard")         # Keyboard macros and detection
+    install("PyQt6")            # GUI library
     # ...
     print("All necessary dependencies are present...")
 except Exception:
@@ -104,7 +141,6 @@ from PyQt6.QtWidgets import QApplication, QLabel, QWidget
 from PyQt6.QtGui import QPainter, QPen, QColor
 
 # System
-import os       # For CWD
 import ctypes   # For OS level window clickthrough
 
 # Set current working directory to python script location
@@ -115,10 +151,16 @@ os.chdir(script_dir)
 MODEL_CACHE_DIR = ".model_cache"
 os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
 
-# Load Hy-MT2 - Text translation model
-model_id = ".model_cache/Hy-MT2-1.8B-Q8_0.gguf"
+# Download Hy-MT2 - Text translation model
+from huggingface_hub import hf_hub_download
+model_path = hf_hub_download(
+    repo_id="tencent/Hy-MT2-1.8B-GGUF",
+    filename="Hy-MT2-1.8B-Q4_K_M.gguf",
+    cache_dir=".model_cache"
+)
+# Load Hy-MT2
 try:
-    translation_model = Llama(model_path=model_id, n_gpu_layers=0)
+    translation_model = Llama(model_path=model_path, verbose=False, n_gpu_layers=-1)
 except Exception as e:
     # Abort program if model is not available online or offline
     print("Transformer text translation model not present and cannot be fetched from the web! (Check your internet connection.)")
@@ -130,12 +172,9 @@ except Exception as e:
 # User options
 native_language = "English"
 translation_hotkey = "ctrl"
-#capture_area = 240 # Capture 480p image
 # System options
 IMAGE_NAME = ".screenshot.png"
 MAX_TOKENS = 256                # Small token size for testing
-#TERMINATOR = f"</think>\n\n"    # Mini CPM output terminator;
-                                # Anything before this is either AI thought or user input data
 
 # Capture screen around current mouse position
 def capture_screen(image_name, top_left, bottom_right):
@@ -152,7 +191,8 @@ def capture_screen(image_name, top_left, bottom_right):
     )
     return screenshot_pos, capture_area
 
-#print(f"How to use:\nPress {translation_hotkey} to translate a {capture_area} pixel area around your mouse cursor...")
+
+
 
 frames = []
 windows = []
@@ -173,6 +213,10 @@ class TranslationWorker(QObject):
         # Example language list
         lang_list=["ru","rs_cyrillic","be","bg","uk","mn","en"]
         easy_reader = easyocr.Reader(lang_list)
+
+        print("\n\nTranslEYEtor ONLINE.\n")
+
+        print("Instuctions:\n1. Move your mouse over the top-left of an area you want translated and press CTRL.\n2. Move your mouse over the bottom-right of an area you want translated and press CTRL again.\n3. Wait 5-10 seconds.\n\n")
 
         while self.running:
 
@@ -200,17 +244,19 @@ class TranslationWorker(QObject):
 
                 start_time = time.time()
 
-                print("Captured image. Parsing...")
+                print("EasyOCR /// Captured image. Parsing...")
 
                 # Convert image text to text via EasyOCR
                 ocr_output = easy_reader.readtext(IMAGE_NAME, paragraph=True)
+
+                print(f"EasyOCR /// Image parsed in {time.time() - start_time} seconds.")
 
                 # Pass on answer to translation model
                 for text_item in ocr_output:
 
                     source_text = text_item[1]
 
-                    print(f"Hy-MT2-1.8B-Q8_0.gguf /// Translating text chunk to {native_language}...")
+                    print(f"Hy-MT2-1.8B-Q4_K_M /// Translating text chunk to {native_language}...")
                     translation_prompt = f"Translate without explanation to {native_language}: {source_text}"
                     full_response = translation_model(translation_prompt, max_tokens=MAX_TOKENS)
                     response = full_response["choices"][0]["text"].strip()
