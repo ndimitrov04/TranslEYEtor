@@ -46,7 +46,9 @@ def install_cpu():
     print("Installing llama-cpp for CPU infernece...")
     subprocess.check_call([
         sys.executable, "-m", "pip", "install",
-        "llama-cpp-python"
+        "llama-cpp-python",
+        "--extra-index-url",
+        "https://abetlen.github.io/llama-cpp-python/whl/cpu"
     ])
 
 # Detect GPU avalability and type; Install Llama.cpp for NVidia/AMD gpu (CUDA or Vulkan)
