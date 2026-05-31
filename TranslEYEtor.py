@@ -18,7 +18,8 @@
 
 # This program requires:
 #    - Windows 10/11
-#    - Python 3.13
+#    - Python 3.10
+#    - CMAKE
 #    - PIP
 
 # This program will automatically download:
@@ -33,7 +34,7 @@ import math
 import time
 import os
 
-print("Starting TranslEYEtor V0.3.0 Alpha...")
+print("Starting TranslEYEtor V0.3.1 Alpha...")
 
 def abort_program():
     input("FAILURE: Press Enter to exit...")
@@ -56,6 +57,8 @@ def install_cpu():
 # CUDA wheel is premade. Building Vulkan wheel may take a LONG time.
 no_gpu = True
 try:
+    # WARNING: Importing WMI might fail on first run. If no GPU is found, close and reopen the program.
+    print("WARNING: Importing WMI might fail on first run. If no GPU is found, close and reopen the program.")
     subprocess.check_call([
         sys.executable, "-m", "pip", "install", 
         "wmi", 
@@ -85,28 +88,44 @@ try:
             # This process may take a long time.
             # https://vulkan.lunarg.com/sdk/home
             print("AMD GPU:", gpu.name)
-            print("Fetching VulkanSDK (required to build Vulkan wheel)...")
-            subprocess.check_call([
-                "winget", "install", "-e", "--id",
-                "KhronosGroup.VulkanSDK"
-            ])
-
+            PACKAGE_ID = "KhronosGroup.VulkanSDK"
             print("Installing llama-cpp /w VULKAN...")
+            print("Checking if VulkanSDK is present...")
+            result = subprocess.run(
+                ["winget", "list", "--id", PACKAGE_ID, "-e"],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0 or PACKAGE_ID not in result.stdout:
+                print("Fetching VulkanSDK (required to build Vulkan wheel)...")
+                subprocess.check_call([
+                    "winget", "install", "-e", "--id", PACKAGE_ID
+                ])
+            print("VulkanSDK present...")
+
             print("NOTICE: Building the Vulkan wheel may take a LONG time.")
             env = os.environ.copy()
-            env["CMAKE_ARGS"] = "-DGGML_VULKAN=on"
+            env["CMAKE_ARGS"] = "-DGGML_VULKAN=ON"
+            env["FORCE_CMAKE"] = "1"
             subprocess.check_call([
-                sys.executable, "-m", "pip", "install",
+                sys.executable, "-m", "pip", "install", 
+                "--no-cache-dir",
                 "llama-cpp-python"
             ], env=env)
             no_gpu = False
             break
         else:
             print("Unsupported GPU:", gpu.name)
-except Exception as e:
-    print("ERROR: " + str(e))
+except Exception as gpu_fail:
+    print("ERROR: " + str(gpu_fail))
     print("Error while installing llama with GPU support, falling back to CPU...")
-    no_gpu = True
+    subprocess.check_call([
+        sys.executable, "-m", "pip", "install",
+        "llama-cpp-python",
+        "--extra-index-url",
+        "https://abetlen.github.io/llama-cpp-python/whl/cpu",
+        "--force-reinstall"
+    ])
 
 if no_gpu:
     print("No compatible GPUs found.")
@@ -117,6 +136,7 @@ if no_gpu:
 try:
     # AI Dependencies
     install("easyocr")
+    install("numpy<2")
     # Utilities
     install("huggingface_hub")  # AI model downloading
     install("pyautogui")        # Mouse macros, screenshots
