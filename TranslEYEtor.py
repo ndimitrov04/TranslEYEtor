@@ -52,9 +52,14 @@ def install_cpu():
         "https://abetlen.github.io/llama-cpp-python/whl/cpu"
     ])
 
+
 # Detect GPU avalability and type; Install Llama.cpp for NVidia/AMD gpu (CUDA or Vulkan)
 # WARNING: Vulkan wheel requires VulkanSDK to be built: https://vulkan.lunarg.com/sdk/home
 # CUDA wheel is premade. Building Vulkan wheel may take a LONG time.
+install("torch-directml")
+import torch_directml
+print(torch_directml.device_name(0))
+print(torch_directml.device_name(1))
 no_gpu = True
 try:
     # WARNING: Importing WMI might fail on first run. If no GPU is found, close and reopen the program.
@@ -135,8 +140,7 @@ if no_gpu:
 # Install required packages
 try:
     # AI Dependencies
-    install("easyocr")
-    install("numpy<2")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "easyocr", "numpy<2"])
     # Utilities
     install("huggingface_hub")  # AI model downloading
     install("pyautogui")        # Mouse macros, screenshots
