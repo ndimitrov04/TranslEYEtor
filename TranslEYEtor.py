@@ -35,7 +35,7 @@ import time
 import os
 import ctypes
 
-print("Starting TranslEYEtor V0.3.2 Alpha...")
+print("Starting TranslEYEtor V0.3.3 Alpha...")
 
 def abort_program():
     input("FAILURE: Press Enter to exit...")
@@ -182,9 +182,11 @@ from PIL import Image
 import pyautogui
 import keyboard
 # PyQt6 dependencies
-from PyQt6.QtCore import Qt, QObject, QThread, QSize, QTimer, QPropertyAnimation, QEasingCurve, pyqtProperty, pyqtSignal
-from PyQt6.QtWidgets import QApplication, QLabel, QWidget
-from PyQt6.QtGui import QPainter, QPen, QColor
+from PyQt6.QtCore import (Qt, QObject, QThread, QSize, QTimer, 
+                          QPropertyAnimation, QEasingCurve, pyqtProperty, pyqtSignal)
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, QComboBox,
+                             QLabel, QPushButton, QSystemTrayIcon, QMenu, QTextEdit)
+from PyQt6.QtGui import QPainter, QPen, QColor, QIcon, QPixmap, QAction
 
 # --------------------------------------------------------------------------------
 
@@ -243,14 +245,23 @@ def capture_screen(image_name, top_left, bottom_right):
 # Global Vars
 # ================================================================================
 
+# Initialize EasyOCR with lang lists
+easy_reader_latin = easyocr.Reader(['en', 'fr', 'de', 'es', 'it'])
+easy_reader_cyrillic = easyocr.Reader(["ru", "rs_cyrillic", "be", "bg", "uk", "mn", "en"])
+easy_reader_arabic = easyocr.Reader(['ar', 'fa', 'ur', 'en'])
+easy_reader_chinese = easyocr.Reader(['ch_sim', 'en'])
+easy_reader_japanese = easyocr.Reader(['ja', 'en'])
+easy_reader_korean = easyocr.Reader(['ko', 'en'])
+
 # Options
 # --------------------------------------------------------------------------------
 # User options
 native_language = "English"
 translation_hotkey = "ctrl"
-# System options (const)
+# System options
 IMAGE_NAME = ".screenshot.png"
-MAX_TOKENS = 256                # Small token size for testing
+MAX_TOKENS = 256    # Small token size for testing
+easy_reader = easy_reader_latin
 # --------------------------------------------------------------------------------
 
 # Selection coordinates - used only for GUI. 
@@ -280,25 +291,21 @@ class TranslationWorker(QObject):
 
     def run(self):
 
-        # Example language list
-        lang_list=["ru","rs_cyrillic","be","bg","uk","mn","en"]
-        easy_reader = easyocr.Reader(lang_list)
-
         print("\n\nTranslEYEtor ONLINE.\n")
 
         print("Click and drag a bounding box over the area you want translated...")
 
         while self.running:
 
-            print(f"Awaiting {translation_hotkey} press...")
+            print(f"Awaiting {translation_hotkey}+shift press...")
 
             try:
                 # Capture screen top_left on press
-                keyboard.wait(translation_hotkey, False, False)
+                keyboard.wait((translation_hotkey + "+shift"), False, False)
                 top_left = pyautogui.position()
                 global top_left_sel
                 top_left_sel = top_left
-                print("Captured top-left; Awaiting CTRL press...")
+                print(f"Keep pressing {translation_hotkey} and drag your mouse over an area to select it...")
                 # Poll until hotkey is fully released
                 while keyboard.is_pressed(translation_hotkey):
                     time.sleep(0.01)  # Prevent 100% CPU usage
@@ -561,6 +568,164 @@ class SelectionWindow(QWidget):
             styles | WS_EX_TRANSPARENT
         )
 
+# Tray Option Menu
+class TrayApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        
+        # Basic parameters
+        self.setWindowTitle("TranslEYETor")
+        self.resize(320, 200)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)  # Explicitly opaque
+        
+        # Options UI
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        
+        self.icon_label = QLabel()
+        pixmap = QPixmap("icon.png")
+        scaled = pixmap.scaled(
+            64, 64,
+            aspectRatioMode=Qt.AspectRatioMode.KeepAspectRatio,
+            transformMode=Qt.TransformationMode.SmoothTransformation
+        )
+        self.icon_label.setPixmap(scaled)
+        layout.addWidget(self.icon_label)
+
+        self.ver_label = QLabel("Ver. 0.3.3")
+        layout.addWidget(self.ver_label)
+
+        self.inst_label = QLabel("Hold CTRL+SHIFT and drag your mouse over an area you want translated.")
+        layout.addWidget(self.inst_label)
+
+        self.native_label = QLabel("Native Language")
+        layout.addWidget(self.native_label)
+        
+        self.language_textbox = QTextEdit()
+        self.language_textbox.setPlainText("English")
+        self.language_textbox.setPlaceholderText("Please enter your native language.")
+        self.language_textbox.textChanged.connect(self.native_lang_changed)
+        self.language_textbox.setFixedHeight(26)
+        layout.addWidget(self.language_textbox)
+
+        self.foreign_label = QLabel("Foreign Language Family")
+        layout.addWidget(self.foreign_label)
+
+        self.lang_family_select = QComboBox()
+        self.lang_family_select.addItems(
+            [
+                "Latin",
+                "Cyrillic",
+                "Arabic",
+                "Chinese",
+                "Japanese",
+                "Korean"
+            ]
+        )
+        self.lang_family_select.currentIndexChanged.connect(self.lang_family_changed)
+        layout.addWidget(self.lang_family_select)
+
+        self.minimize_btn = QPushButton("Minimize to Tray")
+        self.minimize_btn.clicked.connect(self.hide_to_tray)
+        layout.addWidget(self.minimize_btn)
+
+
+        # Set windows taskbar icon
+        # Tell windows that python is a host for this app
+        # and that windows should use the icon of the app, not the host.
+        import ctypes
+        myappid = 'mycompany.myproduct.subproduct.version'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        # Set app icon
+        self.setWindowIcon(QIcon("icon.png"))
+
+
+        # System Tray Setup
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(QIcon("icon.png"))
+        self.tray_icon.activated.connect(self.on_tray_activated)
+        self.tray_icon.setToolTip("TranslEYEtor")
+        self.tray_icon.show()
+        
+        # Tray Menu
+        self.tray_menu = QMenu()
+        self.show_action = QAction("Show Window", self)
+        self.quit_action = QAction("Quit", self)
+        
+        self.tray_menu.addAction(self.show_action)
+        self.tray_menu.addAction(self.quit_action)
+        self.tray_icon.setContextMenu(self.tray_menu)
+        
+        # Connect menu actions
+        self.show_action.triggered.connect(self.restore_window)
+        self.quit_action.triggered.connect(QApplication.quit)
+        
+        self.tray_icon.show()
+    
+
+    # Main window handlers
+
+    def create_app_icon(self) -> QIcon:
+        """Creates a simple fallback icon if no .png/.ico is provided."""
+        pixmap = QPixmap(32, 32)
+        pixmap.fill(Qt.GlobalColor.darkCyan)
+        return QIcon(pixmap)
+        
+    def hide_to_tray(self):
+        """Hides window and shows tray notification (optional)."""
+        self.hide()
+        # Optional: Show brief system notification
+        self.tray_icon.showMessage(
+            "App Minimized", 
+            "Window hidden. Double-click tray icon to restore.",
+            QSystemTrayIcon.MessageIcon.Information,
+            2000
+        )
+        
+    def restore_window(self):
+        """Shows window, activates focus, and raises above other windows."""
+        self.show()
+        self.activateWindow()
+        self.raise_()
+        
+    def on_tray_activated(self, reason):
+        """Handles single/double clicks on the tray icon."""
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.restore_window()
+            
+    def closeEvent(self, event):
+        """Intercepts X button or Alt+F4 to hide instead of quit."""
+        event.ignore()  # Prevent actual close
+        self.hide_to_tray()
+
+
+    # Widget handlers
+
+    def native_lang_changed(self):
+        global native_language
+        native_language = self.language_textbox.toPlainText()
+        print("New native lang: " + str(native_language))
+
+    def lang_family_changed(self, index):
+        print("Index changed", index)
+        # Select easy_reader based on chosen lang list
+        global easy_reader
+        match index:
+            case 0:
+                easy_reader = easy_reader_latin
+            case 1:
+                easy_reader = easy_reader_cyrillic
+            case 2:
+                easy_reader = easy_reader_arabic
+            case 3:
+                easy_reader = easy_reader_chinese
+            case 4:
+                easy_reader = easy_reader_japanese
+            case 5:
+                easy_reader = easy_reader_korean
+        print(easy_reader.lang_char)
+
 # ================================================================================
 
 
@@ -599,12 +764,16 @@ def translation_done():
 # --------------------------------------------------------------------------------
 # Start app
 app = QApplication(sys.argv)
+main_windows = []
 
 # Initialize selection window (For dragging GUI)
-selection_window = []
-selection_window.append(SelectionWindow())
-selection_window[0].show()
-selection_window[0].move(0,0)
+main_windows.append(SelectionWindow())
+main_windows[0].show()
+main_windows[0].move(0,0)
+
+# Initialize option window (tray)
+main_windows.append(TrayApp())
+main_windows[1].show()
 
 # Initialize worker & thread
 worker = TranslationWorker()
