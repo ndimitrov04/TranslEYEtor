@@ -35,7 +35,7 @@ import time
 import os
 import ctypes
 
-print("Starting TranslEYEtor V0.3.3 Alpha...")
+print("Starting TranslEYEtor V0.3.4 Alpha...")
 
 def abort_program():
     input("FAILURE: Press Enter to exit...")
@@ -46,11 +46,12 @@ def install(package):
 
 def install_cpu():
     print("Installing llama-cpp for CPU infernece...")
+    print("NOTICE: Building the CPU wheel may take a LONG time.")
     subprocess.check_call([
         sys.executable, "-m", "pip", "install",
         "llama-cpp-python",
         "--extra-index-url",
-        "https://abetlen.github.io/llama-cpp-python/whl/cpu"
+        "--no-cache-dir"
     ])
 
 
@@ -75,10 +76,10 @@ try:
         "wmi", 
         "pywin32"
     ])
+    time.sleep(1)
     import wmi
-    c = wmi.WMI()
-    for gpu in c.Win32_VideoController():
-        name = gpu.Name
+    for gpu in wmi.WMI().Win32_VideoController():
+        name = gpu.name
         name = name.lower()
         if "nvidia" in name:
             # NVidia always has it easy, wheel is premade and ready to use...
@@ -97,6 +98,12 @@ try:
             break
 
         elif "amd" in name or "radeon" in name:
+
+            # If GPU is integrated, continue searching
+            if not ("rx" in name or "pro" in name or "vii" in name or "r9" in name or "r7" in name):
+                print(gpu.name + " is an integrated GPU.")
+                continue    
+
             # This requires the vulkan SDK, wheel needs to be built from scartch. NOT GOOD.
             # This process may take a long time.
             # https://vulkan.lunarg.com/sdk/home
@@ -139,12 +146,13 @@ except Exception as gpu_fail:
 
     print("ERROR: " + str(gpu_fail))
     print("Error while installing llama with GPU support, falling back to CPU...")
+    print("NOTICE: Building the CPU wheel may take a LONG time.")
     subprocess.check_call([
         sys.executable, "-m", "pip", "install",
         "llama-cpp-python",
         "--extra-index-url",
-        "https://abetlen.github.io/llama-cpp-python/whl/cpu",
-        "--force-reinstall"
+        "--force-reinstall",
+        "--no-cache-dir"
     ])
 
 
@@ -211,7 +219,10 @@ model_path = hf_hub_download(
 )
 # Load Hy-MT2
 try:
-    translation_model = Llama(model_path=model_path, verbose=False, n_gpu_layers=-1)
+    if no_gpu:
+        translation_model = Llama(model_path=model_path, verbose=True, n_gpu_layers=0)
+    else:
+        translation_model = Llama(model_path=model_path, verbose=False, n_gpu_layers=-1)
 except Exception as e:
     # Abort program if model is not available online or offline
     print("Transformer text translation model not present and cannot be fetched from the web! (Check your internet connection.)")
@@ -246,11 +257,17 @@ def capture_screen(image_name, top_left, bottom_right):
 # ================================================================================
 
 # Initialize EasyOCR with lang lists
+print("Preparing EasyOCR latin dictionary...")
 easy_reader_latin = easyocr.Reader(['en', 'fr', 'de', 'es', 'it'])
+print("Preparing EasyOCR cyrillic dictionary...")
 easy_reader_cyrillic = easyocr.Reader(["ru", "rs_cyrillic", "be", "bg", "uk", "mn", "en"])
+print("Preparing EasyOCR arabic dictionary...")
 easy_reader_arabic = easyocr.Reader(['ar', 'fa', 'ur', 'en'])
+print("Preparing EasyOCR chinese dictionary...")
 easy_reader_chinese = easyocr.Reader(['ch_sim', 'en'])
+print("Preparing EasyOCR japanese dictionary...")
 easy_reader_japanese = easyocr.Reader(['ja', 'en'])
+print("Preparing EasyOCR korean dictionary...")
 easy_reader_korean = easyocr.Reader(['ko', 'en'])
 
 # Options
