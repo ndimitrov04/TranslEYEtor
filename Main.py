@@ -6,6 +6,8 @@
 #    |_|_|  \__,_|_| |_|___/_|______|  |_|  |______|\__\___/|_|   
                                                                                                                       
 
+# WARNING! - DO NOT RUN THIS FILE BEFORE RUNNING INSTALL.BAT!
+
 # This is an experimental screen translation app.
 # This program uses two local AI models (OCR + TranslationLLM)
 # in order to translate screen text in-place.
@@ -18,15 +20,28 @@
 
 # This program requires:
 #    - Windows 10/11
-#    - Python 3.10
-#    - CMAKE
-#    - PIP
+#    - Winget
 
 # This program will automatically download:
+#   - Python 3.10
+#   - PIP
 #   - Vulkan SDK (if AMD GPU is detected)
+#   - CMAKE
 #   - Llama.cpp
 #   - The Hy-MT2 text translation model from huggingface
 #   - A TON of python packages
+
+
+# Create a safe from name overflow temp location (%appdata% -> path too long)
+# --------------------------------------------------------------------------------
+import os
+import tempfile
+SAFE_TEMP = r"C:\temp"
+os.makedirs(SAFE_TEMP, exist_ok=True)
+os.environ["TEMP"] = SAFE_TEMP
+os.environ["TMP"] = SAFE_TEMP
+tempfile.tempdir = SAFE_TEMP
+# --------------------------------------------------------------------------------
 
 import Init
 
