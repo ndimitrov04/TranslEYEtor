@@ -10,6 +10,12 @@ exit /b
 
 cd /d "%~dp0"
 
+echo ==========================================
+echo Installing WMI and PYWIN32 extensions
+echo ==========================================
+
+python -m pip install wmi pywin32
+
 timeout /t 3 >nul
 
 echo Cleaning up installation setup...

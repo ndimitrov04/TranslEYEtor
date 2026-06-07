@@ -17,12 +17,6 @@ echo ==========================================
 
 winget install --id Python.Python.3.10 --exact --accept-package-agreements --accept-source-agreements
 
-echo ==========================================
-echo Installing WMI and PYWIN32 extensions
-echo ==========================================
-
-python -m pip install wmi pywin32
-
 echo.
 echo ==========================================
 echo Installing Visual Studio Build Tools

@@ -6,17 +6,14 @@
 #    |_|_|  \__,_|_| |_|___/_|______|  |_|  |______|\__\___/|_|   
                                                                                                                       
 
-# WARNING! - DO NOT RUN THIS FILE BEFORE RUNNING INSTALL.BAT!
+# WARNING! - DO NOT RUN THIS FILE BEFORE RUNNING INSTALL.BAT FOR THE FIRST TIME!
 
 # This is an experimental screen translation app.
 # This program uses two local AI models (OCR + TranslationLLM)
 # in order to translate screen text in-place.
 
 # How to use:
-#    1. Mouse over any on screen text
-#    2. Press CTRL
-#    3. Wait
-#    4. A translation will appear over your chosen text
+#   - Hold CTRL+SHIFT and drag your mouse over an area you want translated.
 
 # This program requires:
 #    - Windows 10/11
