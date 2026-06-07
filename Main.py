@@ -18,14 +18,16 @@
 # This program requires:
 #    - Windows 10/11
 #    - Winget
+#    - At least 15GB of free storage space
 
 # This program will automatically download:
 #   - Python 3.10
 #   - PIP
+#   - MSVC Build Tools 2022
 #   - Vulkan SDK (if AMD GPU is detected)
 #   - CMAKE
 #   - Llama.cpp
-#   - The Hy-MT2 text translation model from huggingface
+#   - The Hy-MT2 1.8B text translation model from huggingface
 #   - A TON of python packages
 
 

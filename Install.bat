@@ -9,6 +9,46 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 exit /b
 )
 
+:: Ask user for confirmation using Windows CMD dialog
+echo Welcome to ...
+echo " _______                  _ ________     ________ _             "
+echo "|__   __|                | |  ____\ \   / /  ____| |            "
+echo "   | |_ __ __ _ _ __  ___| | |__   \ \_/ /| |__  | |_ ___  _ __ "
+echo "   | | '__/ _` | '_ \/ __| |  __|   \   / |  __| | __/ _ \| '__|"
+echo "   | | | | (_| | | | \__ \ | |____   | |  | |____| || (_) | |   "
+echo "   |_|_|  \__,_|_| |_|___/_|______|  |_|  |______|\__\___/|_|   "
+echo.
+echo.
+
+echo WHAT IS IT?: This is an in-place multilingual screen translation app.
+echo.
+
+echo PRIVATE: The app is fully local and does not use the internet for anything other than installation. The two AI models it uses will be ran on your hardware without sending any data anywhere or connecting to the internet in any way.
+echo.
+
+echo REQUIREMENTS: Please make sure you have at least 15GB of free space before installing and are running either Windows 10 or 11. 
+echo.
+
+echo WHAT WILL THIS INSTALLER DO?: This installer will install TranslEYEtor and the following necessary dependencies: 
+echo - Python3.10 
+echo - PIP
+echo - MSVC Build Tools 2022 
+echo - Vulkan SDK (if AMD GPU present)
+echo - CMAKE
+echo - Llama-cpp-python
+echo - EasyOCR (OCR Model + Python library)
+echo - Hy-MT2 1.8B (translation AI model)
+echo - A TON of python packages.
+echo.
+
+choice /C YN /M "Do you want to proceed with the installation?"
+
+if %errorlevel%==2 (
+    echo.
+    echo Installation cancelled by user. Exiting...
+    exit /b
+)
+
 cd /d "%~dp0"
 
 echo ==========================================
