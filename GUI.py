@@ -249,6 +249,10 @@ class TrayApp(QMainWindow):
         self.minimize_btn.clicked.connect(self.hide_to_tray)
         layout.addWidget(self.minimize_btn)
 
+        self.cred_label = QLabel()
+        self.cred_label.setText('Created by <a href="https://nportfolio-1966f0.webflow.io/">Nikola Dimitrov</a>')
+        layout.addWidget(self.cred_label)
+        self.cred_label.setOpenExternalLinks(True)
 
         # Set windows taskbar icon
         # Tell windows that python is a host for this app
@@ -285,36 +289,35 @@ class TrayApp(QMainWindow):
 
     # Main window handlers
 
+    # Creates a simple fallback icon if no .png/.ico is provided.
     def create_app_icon(self) -> QIcon:
-        """Creates a simple fallback icon if no .png/.ico is provided."""
         pixmap = QPixmap(32, 32)
         pixmap.fill(Qt.GlobalColor.darkCyan)
         return QIcon(pixmap)
-        
+    
+    # Hides window and shows tray notification (optional).
     def hide_to_tray(self):
-        """Hides window and shows tray notification (optional)."""
         self.hide()
-        # Optional: Show brief system notification
         self.tray_icon.showMessage(
             "App Minimized", 
             "Window hidden. Double-click tray icon to restore.",
             QSystemTrayIcon.MessageIcon.Information,
             2000
         )
-        
+    
+    # Shows window, activates focus, and raises above other windows.
     def restore_window(self):
-        """Shows window, activates focus, and raises above other windows."""
         self.show()
         self.activateWindow()
         self.raise_()
         
+    # Handles single/double clicks on the tray icon.
     def on_tray_activated(self, reason):
-        """Handles single/double clicks on the tray icon."""
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.restore_window()
-            
+    
+    # Intercepts X button or Alt+F4 to hide instead of quit.
     def closeEvent(self, event):
-        """Intercepts X button or Alt+F4 to hide instead of quit."""
         event.ignore()  # Prevent actual close
         self.hide_to_tray()
 

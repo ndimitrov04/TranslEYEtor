@@ -5,6 +5,8 @@ import time
 import os
 import ctypes
 
+os.chdir(os.path.dirname(__file__))
+
 def abort_program():
     print("NOTICE: A dependency issue has been encountered, restarting the program from Main.py might fix the issue.")
     x = input("FAILURE: Press Enter to exit...")
@@ -25,7 +27,7 @@ def install_cpu():
         "--no-cache-dir"
     ])
 
-version = "0.3.5"
+version = "0.4.0"
 
 # Download/upgrade certificates required for installation
 subprocess.check_call([
