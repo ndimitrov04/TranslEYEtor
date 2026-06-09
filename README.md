@@ -1,5 +1,16 @@
 # TranslEYEtor
-An automatic AI powered screen translator.
+
+An experimental private in-place translation
+tool made with Python. Leverages 2 local LLMs
+for OCR + Translation. High local AI performance,
+compatible with CPU only systems
+as well as AMD GPUs and NVidia GPUs.
+
+Fully local, does not even connect to the internet after installation. Everything happens on your system.
+
+Simply hold CTRL+SHIFT and drag your mouse over any area of your screen - Images, Video Frames, Text - and watch it be translated!
+
+![alt text](https://cdn.prod.website-files.com/6605a1208312719eb249cef4/6a27b837a2786d96aa8e557e_transleyetor.png)
 
 ## Current Version
 V0.4 - Alpha <br>
