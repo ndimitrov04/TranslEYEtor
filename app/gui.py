@@ -1,5 +1,17 @@
-import Globals
-from Install import *
+# Necessary Dependencies
+# --------------------------------------------------------------------------------
+# Custom
+import app.globals as globals
+from app.startup.init import *
+# Utilities
+import pyautogui
+from pathlib import Path
+# PyQt6 dependencies
+from PyQt6.QtCore import (Qt, QTimer, 
+                          QPropertyAnimation, QEasingCurve, pyqtProperty, pyqtSignal)
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, QComboBox,
+                             QLabel, QPushButton, QSystemTrayIcon, QMenu, QLineEdit)
+from PyQt6.QtGui import QPainter, QPen, QColor, QIcon, QPixmap, QAction
 
 # GUI Setup
 # ================================================================================
@@ -166,10 +178,10 @@ class SelectionWindow(QWidget):
         pen = QPen(base_color, 3)
         painter.setPen(pen)
 
-        if Globals.top_left_sel != [0, 0]:
-            Globals.bottom_right_sel = pyautogui.position()
+        if globals.top_left_sel != [0, 0]:
+            globals.bottom_right_sel = pyautogui.position()
 
-        painter.drawRect(Globals.top_left_sel[0], Globals.top_left_sel[1], Globals.bottom_right_sel[0] - Globals.top_left_sel[0], Globals.bottom_right_sel[1] - Globals.top_left_sel[1])
+        painter.drawRect(globals.top_left_sel[0], globals.top_left_sel[1], globals.bottom_right_sel[0] - globals.top_left_sel[0], globals.bottom_right_sel[1] - globals.top_left_sel[1])
         QTimer.singleShot(16, self.update) # ~62FPS (1000ms/16ms = ~62f/s)
         painter.end()
 
@@ -203,7 +215,7 @@ class TrayApp(QMainWindow):
         layout = QVBoxLayout(central)
         
         self.icon_label = QLabel()
-        pixmap = QPixmap("icon.png")
+        pixmap = QPixmap(str(Path(__file__).resolve().parent) + "/resources/icon.png")
         scaled = pixmap.scaled(
             64, 64,
             aspectRatioMode=Qt.AspectRatioMode.KeepAspectRatio,
@@ -221,10 +233,16 @@ class TrayApp(QMainWindow):
         self.native_label = QLabel("Native Language")
         layout.addWidget(self.native_label)
         
-        self.language_textbox = QTextEdit()
-        self.language_textbox.setPlainText("English")
+        self.unconfirmed_change_label = QLabel("Press ENTER to confirm language change.")
+        layout.addWidget(self.unconfirmed_change_label)
+        self.unconfirmed_change_label.setStyleSheet("color: red;")
+        self.unconfirmed_change_label.hide()
+
+        self.language_textbox = QLineEdit()
+        self.language_textbox.setText("English")
         self.language_textbox.setPlaceholderText("Please enter your native language.")
-        self.language_textbox.textChanged.connect(self.native_lang_changed)
+        self.language_textbox.returnPressed.connect(self.native_lang_changed)
+        self.language_textbox.textChanged.connect(self.unconfirmed_change)
         self.language_textbox.setFixedHeight(26)
         layout.addWidget(self.language_textbox)
 
@@ -249,6 +267,10 @@ class TrayApp(QMainWindow):
         self.minimize_btn.clicked.connect(self.hide_to_tray)
         layout.addWidget(self.minimize_btn)
 
+        self.interrupt_btn = QPushButton("Interrupt Translation")
+        self.interrupt_btn.clicked.connect(self.interrupt_translation_pipeline)
+        layout.addWidget(self.interrupt_btn)
+
         self.cred_label = QLabel()
         self.cred_label.setText('Created by <a href="https://nportfolio-1966f0.webflow.io/">Nikola Dimitrov</a>')
         layout.addWidget(self.cred_label)
@@ -261,28 +283,39 @@ class TrayApp(QMainWindow):
         myappid = 'mycompany.myproduct.subproduct.version'
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         # Set app icon
-        self.setWindowIcon(QIcon("icon.png"))
+        self.setWindowIcon(QIcon(str(Path(__file__).resolve().parent) + "/resources/icon.png"))
 
 
         # System Tray Setup
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon("icon.png"))
+        self.tray_icon.setIcon(QIcon(str(Path(__file__).resolve().parent) + "/resources/icon.png"))
         self.tray_icon.activated.connect(self.on_tray_activated)
         self.tray_icon.setToolTip("TranslEYEtor")
         self.tray_icon.show()
+
+        # Tray Icon Refresh
+        self._current_tray_icon = None
+        self.tray_sync_timer = QTimer(self)
+        self.tray_sync_timer.setInterval(200)
+        self.tray_sync_timer.timeout.connect(self.update_tray_icon)
+        self.tray_sync_timer.start()
+        self.update_tray_icon()
         
         # Tray Menu
         self.tray_menu = QMenu()
         self.show_action = QAction("Show Window", self)
+        self.interrupt_action = QAction("Interrupt Translation", self)
         self.quit_action = QAction("Quit", self)
         
         self.tray_menu.addAction(self.show_action)
+        self.tray_menu.addAction(self.interrupt_action)
         self.tray_menu.addAction(self.quit_action)
         self.tray_icon.setContextMenu(self.tray_menu)
         
         # Connect menu actions
         self.show_action.triggered.connect(self.restore_window)
-        self.quit_action.triggered.connect(QApplication.quit)
+        self.interrupt_action.triggered.connect(self.interrupt_translation_pipeline)
+        self.quit_action.triggered.connect(self.quit_app)
         
         self.tray_icon.show()
     
@@ -321,29 +354,57 @@ class TrayApp(QMainWindow):
         event.ignore()  # Prevent actual close
         self.hide_to_tray()
 
+    # Updates tray icon based on server state
+    def update_tray_icon(self):
+    
+        # Priority: Server stopped > Working > Idle
+        if not globals.translation_server_ready:
+            icon_path = str(Path(__file__).resolve().parent) + "/resources/blocked.png"
+        elif globals.working:
+            icon_path = str(Path(__file__).resolve().parent) + "/resources/working.png"
+        else:
+            icon_path = str(Path(__file__).resolve().parent) + "/resources/icon.png"
+            
+        # Prevent unnecessary UI flicker by skipping identical paths
+        if getattr(self, '_current_tray_icon', None) == icon_path:
+            return
+            
+        try:
+            self.tray_icon.setIcon(QIcon(icon_path))
+            self._current_tray_icon = icon_path
+        except Exception as e:
+            print(f"[TrayIcon] Failed to load {icon_path}: {e}")
+
 
     # Widget handlers
+    
+    def unconfirmed_change(self):
+        self.unconfirmed_change_label.show()
 
     def native_lang_changed(self):
-        Globals.native_language = self.language_textbox.toPlainText()
-        print("New native lang: " + str(Globals.native_language))
+        globals.native_language = self.language_textbox.text()
+        print("New native lang: " + str(globals.native_language))
+        # Restart translation server with new options
+        globals.translation_server_running = False
+        self.unconfirmed_change_label.hide()
 
     def lang_family_changed(self, index):
         print("Index changed", index)
         # Select easy_reader based on chosen lang list
-        match index:
-            case 0:
-                Globals.easy_reader = Globals.easy_reader_latin
-            case 1:
-                Globals.easy_reader = Globals.easy_reader_cyrillic
-            case 2:
-                Globals.easy_reader = Globals.easy_reader_arabic
-            case 3:
-                Globals.easy_reader = Globals.easy_reader_chinese
-            case 4:
-                Globals.easy_reader = Globals.easy_reader_japanese
-            case 5:
-                Globals.easy_reader = Globals.easy_reader_korean
-        print(Globals.easy_reader.lang_char)
+        globals.lang_code = index
+        # Restart translation server with new options
+        globals.translation_server_running = False
+
+    def interrupt_translation_pipeline(self):
+        print("User has requested a translation server interruption...")
+        globals.translation_server_running = False
+
+    def quit_app(self):
+        print("Closing TranslEYEtor...")
+        import psutil
+        for p in psutil.Process(os.getpid()).children(recursive=True):
+            p.kill()
+        QApplication.quit()
+        sys.exit(0)
 
 # ================================================================================

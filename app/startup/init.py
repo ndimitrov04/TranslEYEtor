@@ -1,3 +1,5 @@
+import multiprocessing
+import threading
 import subprocess
 import sys
 import math
@@ -27,14 +29,4 @@ def install_cpu():
         "--no-cache-dir"
     ])
 
-version = "0.4.0"
-
-# Download/upgrade certificates required for installation
-subprocess.check_call([
-    sys.executable, "-m", "pip", "install", 
-    "--upgrade", 
-    "certifi"
-])
-import certifi
-os.environ["SSL_CERT_FILE"] = certifi.where()
-os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+version = "0.5.0"

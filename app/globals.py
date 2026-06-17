@@ -1,4 +1,9 @@
-from Install import *
+# Necessary Dependencies
+# --------------------------------------------------------------------------------
+# AI
+import easyocr
+# Utilities
+import pyautogui
 
 # Global Functions
 # ================================================================================
@@ -24,29 +29,20 @@ def capture_screen(image_name, top_left, bottom_right):
 # Global Vars
 # ================================================================================
 
-# Initialize EasyOCR with lang lists
-print("Preparing EasyOCR latin dictionary...")
-easy_reader_latin = easyocr.Reader(['en', 'fr', 'de', 'es', 'it'])
-print("Preparing EasyOCR cyrillic dictionary...")
-easy_reader_cyrillic = easyocr.Reader(["ru", "rs_cyrillic", "be", "bg", "uk", "mn", "en"])
-print("Preparing EasyOCR arabic dictionary...")
-easy_reader_arabic = easyocr.Reader(['ar', 'fa', 'ur', 'en'])
-print("Preparing EasyOCR chinese dictionary...")
-easy_reader_chinese = easyocr.Reader(['ch_sim', 'en'])
-print("Preparing EasyOCR japanese dictionary...")
-easy_reader_japanese = easyocr.Reader(['ja', 'en'])
-print("Preparing EasyOCR korean dictionary...")
-easy_reader_korean = easyocr.Reader(['ko', 'en'])
-
 # Options
 # --------------------------------------------------------------------------------
 # User options
 native_language = "English"
 translation_hotkey = "ctrl"
+translation_model_path = None
+gpu_available = False
 # System options
 IMAGE_NAME = ".screenshot.png"
 MAX_TOKENS = 256    # Small token size for testing
-easy_reader = easy_reader_latin
+lang_code = 0       # 0 - Latin; 1 - Cyrillic; 2 - Arabic; 3 - CH; 4 - JP; 5 - KO
+translation_server_running = False # Setting this to false will stop and restart the server
+translation_server_ready = False # This will be set to true when the server has given a ready response
+working = False
 # --------------------------------------------------------------------------------
 
 # Selection coordinates - used only for GUI. 

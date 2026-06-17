@@ -30,26 +30,14 @@
 #   - The Hy-MT2 1.8B text translation model from huggingface
 #   - A TON of python packages
 
-
-# Create a safe from name overflow temp location (%appdata% -> path too long)
-# --------------------------------------------------------------------------------
 import os
 import tempfile
-SAFE_TEMP = r"C:\temp"
-os.makedirs(SAFE_TEMP, exist_ok=True)
-os.environ["TEMP"] = SAFE_TEMP
-os.environ["TMP"] = SAFE_TEMP
-tempfile.tempdir = SAFE_TEMP
-# --------------------------------------------------------------------------------
 
-import Init
-
-print(f"Starting TranslEYEtor V{Init.version} Alpha...")
-
-import Globals
-from Install import *
-from TranslationWorker import *
-from GUI import *
+import app.globals as globals
+from app.startup.init import *
+from app.startup.install import app_initialization
+from app.services.translation_worker import *
+from app.gui import *
 
 # Main App
 # ================================================================================
@@ -62,7 +50,7 @@ def show_frame(coords, capture_area):
     frame = ScreenshotFrame(capture_area)
     frame.move(coords[0], coords[1])
     frame.show()
-    Globals.frames.append(frame)
+    globals.frames.append(frame)
 
 # Called from TranslationWorker thread via translation_ready signal
 # Shows translated text in a new window near the captured screenshot
@@ -73,47 +61,63 @@ def show_translation(text, coords, dimensions, font_size):
     except Exception as e:
         print(e)
     window.show()
-    Globals.windows.append(window)
+    globals.windows.append(window)
 
 def translation_done():
-    if len(Globals.frames) > 0:
-        Globals.frames[0].start_fade_out()
+    if len(globals.frames) > 0:
+        globals.frames[0].start_fade_out()
 # --------------------------------------------------------------------------------
-
 
 # App initialization
 # --------------------------------------------------------------------------------
-# Start app
-app = QApplication(sys.argv)
-main_windows = []
+if __name__ == "__main__":
 
-# Initialize selection window (For dragging GUI)
-main_windows.append(SelectionWindow())
-main_windows[0].show()
-main_windows[0].move(0,0)
-# Resize window so it is fullscreen
-screen = app.primaryScreen()
-main_windows[0].resize(screen.size().width(), screen.size().height())
+    # Create a safe from name overflow temp location (%appdata% -> path too long)
+    # --------------------------------------------------------------------------------
 
-# Initialize option window (tray)
-main_windows.append(TrayApp())
-main_windows[1].show()
+    SAFE_TEMP = r"C:\temp"
+    os.makedirs(SAFE_TEMP, exist_ok=True)
+    os.environ["TEMP"] = SAFE_TEMP
+    os.environ["TMP"] = SAFE_TEMP
+    tempfile.tempdir = SAFE_TEMP
+    # --------------------------------------------------------------------------------
 
-# Initialize worker & thread
-worker = TranslationWorker()
-worker_thread = QThread()
-worker.moveToThread(worker_thread)
+    print(f"Starting TranslEYEtor V{version} Alpha...")
 
-# Connect signal to GUI slot
-worker.screenshot_ready.connect(show_frame)
-worker.translation_ready.connect(show_translation)
-worker.translation_finished.connect(translation_done)
-worker_thread.started.connect(worker.run)
+    # Prepare app for startup
+    globals.translation_model_path, globals.gpu_available = app_initialization()
 
-# Start the background loop
-worker_thread.start()
+    # Start app
+    app = QApplication(sys.argv)
+    main_windows = []
 
-# Start Qt Event Loop (this runs until app.quit())
-sys.exit(app.exec())
+    # Initialize selection window (For dragging GUI)
+    main_windows.append(SelectionWindow())
+    main_windows[0].show()
+    main_windows[0].move(0,0)
+    # Resize window so it is fullscreen
+    screen = app.primaryScreen()
+    main_windows[0].resize(screen.size().width(), screen.size().height())
+
+    # Initialize option window (tray)
+    main_windows.append(TrayApp())
+    main_windows[1].show()
+
+    # Initialize worker & thread
+    worker = TranslationWorker()
+    worker_thread = QThread()
+    worker.moveToThread(worker_thread)
+
+    # Connect signal to GUI slot
+    worker.screenshot_ready.connect(show_frame)
+    worker.translation_ready.connect(show_translation)
+    worker.translation_finished.connect(translation_done)
+    worker_thread.started.connect(worker.run)
+
+    # Start the background loop
+    worker_thread.start()
+
+    # Start Qt Event Loop (this runs until app.quit())
+    sys.exit(app.exec())
 # --------------------------------------------------------------------------------
 # ================================================================================

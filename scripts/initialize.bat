@@ -25,4 +25,4 @@ schtasks /Delete /TN "MainPyInit" /F >nul 2>&1
 
 echo Starting TranslEYEtor for the first time...
 
-start "" py -3.10 "%~dp0Main.py"
+start "" py -3.10 "%~dp0main.py"
