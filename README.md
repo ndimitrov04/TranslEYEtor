@@ -16,7 +16,7 @@ Simply hold CTRL+SHIFT and drag your mouse over any area of your screen - Images
 ## Current Version
 V0.5.5 - Alpha <br>
 - App fully reworked
-- TranslEYEtor now support multiprocessing
+- TranslEYEtor now supports multiprocessing
 - Translation now runs on a seperate server
 - Users can now interrupt translations
 - App startup speed greatly increased
