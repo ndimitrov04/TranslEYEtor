@@ -10,7 +10,7 @@ import ctypes
 os.chdir(os.path.dirname(__file__))
 
 def abort_program():
-    print("NOTICE: A dependency issue has been encountered, restarting the program from Main.py might fix the issue.")
+    print("WARNING: A dependency issue has been encountered, restarting the program from Main.py might fix the issue.")
     x = input("FAILURE: Press Enter to exit...")
     x = " "
     print(x)
@@ -25,8 +25,12 @@ def install_cpu():
     subprocess.check_call([
         sys.executable, "-m", "pip", "install",
         "llama-cpp-python",
-        "--extra-index-url",
         "--no-cache-dir"
     ])
 
-version = "0.5.0"
+def retry_install():
+    print("NOTICE: Minor dependency instalation error, automaticall restarting shell to fix issue...")
+    print("(This will not impact installation in any way.)")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+version = "0.5.5"

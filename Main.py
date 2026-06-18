@@ -33,11 +33,9 @@
 import os
 import tempfile
 
-import app.globals as globals
+# Import install/first-time run procedure
 from app.startup.init import *
 from app.startup.install import app_initialization
-from app.services.translation_worker import *
-from app.gui import *
 
 # Main App
 # ================================================================================
@@ -84,8 +82,16 @@ if __name__ == "__main__":
 
     print(f"Starting TranslEYEtor V{version} Alpha...")
 
-    # Prepare app for startup
-    globals.translation_model_path, globals.gpu_available = app_initialization()
+    # Prepare app for startup, install req. dependencies
+    model_path, gpu_avail = app_initialization()
+
+    # Import required dependecies
+    import app.globals as globals
+    from app.services.translation_worker import *
+    from app.gui import *
+
+    globals.translation_model_path = model_path
+    globals.gpu_available = gpu_avail
 
     # Start app
     app = QApplication(sys.argv)

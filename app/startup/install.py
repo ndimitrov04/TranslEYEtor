@@ -4,6 +4,17 @@ from pathlib import Path
 
 def app_initialization():
     # REGULAR RUN ->
+    
+    # Download/upgrade certificates required for installation
+    subprocess.check_call([
+        sys.executable, "-m", "pip", "install", 
+        "--upgrade", 
+        "certifi"
+    ])
+    import certifi
+    os.environ["SSL_CERT_FILE"] = certifi.where()
+    os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
+
     file_path = Path("config.json")
     if file_path.exists():
         print("Loading user config data...")
@@ -17,16 +28,6 @@ def app_initialization():
     # FIRST TIME RUN -->>
     # Download and install required dependencies
     # ================================================================================
-
-    # Download/upgrade certificates required for installation
-    subprocess.check_call([
-        sys.executable, "-m", "pip", "install", 
-        "--upgrade", 
-        "certifi"
-    ])
-    import certifi
-    os.environ["SSL_CERT_FILE"] = certifi.where()
-    os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
     # Llama subsystem (Compatible with CPU; AMD GPU; NVidia GPU)
     # --------------------------------------------------------------------------------
@@ -104,8 +105,8 @@ def app_initialization():
                 env["FORCE_CMAKE"] = "1"
                 subprocess.check_call([
                     sys.executable, "-m", "pip", "install", 
-                    "--no-cache-dir",
-                    "llama-cpp-python"
+                    "llama-cpp-python",
+                    "--no-cache-dir"
                 ], env=env)
                 no_gpu = False
 
@@ -122,7 +123,6 @@ def app_initialization():
         subprocess.check_call([
             sys.executable, "-m", "pip", "install",
             "llama-cpp-python",
-            "--extra-index-url",
             "--force-reinstall",
             "--no-cache-dir"
         ])
@@ -138,7 +138,12 @@ def app_initialization():
     # Package installation
     # --------------------------------------------------------------------------------
 
-    # Install required packages
+    # Install required package
+    # IMPORTANT: Due to the way PIP installs packages,
+    # numpy<2 and numpy>2 will both be installed, resulting
+    # in an error which PIP will be able to automatically fix
+    # after a forced shell restart via retry_install().
+    # This requires a better fix, but it works for now.
     try:
         # AI Dependencies
         subprocess.check_call([sys.executable, "-m", "pip", "install", "easyocr", "numpy<2"])
@@ -151,7 +156,7 @@ def app_initialization():
         print("All necessary dependencies are present...")
     except Exception:
         print("Dependency installation failure!!!")
-        abort_program()
+        retry_install()
 
     # Import installed dependencies
     # AI
