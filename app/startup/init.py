@@ -33,4 +33,4 @@ def retry_install():
     print("(This will not impact installation in any way.)")
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
-version = "0.5.5"
+version = "0.5.6"
