@@ -133,6 +133,12 @@ class TranslationWorker(QObject):
                     bottom_right = pyautogui.position()
                     globals.bottom_right_sel = bottom_right
 
+                    # Make sure capture is always valid regardless of how box is drawn
+                    if bottom_right[0] < top_left[0] or bottom_right[1] < top_left[1]:
+                        buf = bottom_right
+                        bottom_right = top_left
+                        top_left = buf
+
                     # Clear previous capture data
                     globals.top_left_sel = [0, 0]
                     globals.bottom_right_sel = [0, 0]

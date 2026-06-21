@@ -50,7 +50,7 @@ class TranslationWindow(QWidget):
         label.setStyleSheet(f"""
             color: white;
             font-size: {font_size+1}px;
-            background: rgba(0, 0, 0, 160);
+            background: rgba(70, 140, 225, 160);
             padding: 4px;
             border-radius: 6px;
         """)
@@ -124,7 +124,7 @@ class ScreenshotFrame(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
 
-        base_color = QColor(70, 140, 255)
+        base_color = QColor(15, 236, 51)
         base_color.setAlphaF(self._pulse_factor) # Apply pulsing effect
         
         pen = QPen(base_color, 3)
@@ -173,7 +173,7 @@ class SelectionWindow(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
 
-        base_color = QColor(255, 0, 0)
+        base_color = QColor(70, 140, 255)
         
         pen = QPen(base_color, 3)
         painter.setPen(pen)
@@ -485,19 +485,19 @@ class TrayApp(QMainWindow):
         }
 
         QPushButton {
-            background: #5ec6ff;
+            background: #ff0000;
             border: none;
             border-radius: 10px;
             color: white;
             font-weight: 600;
-        }       
+        }
 
         QPushButton:hover {
-            background: #4dbaf6;
+            background: #e60000;
         }
 
         QPushButton:pressed {
-            background: #39adee;
+            background: #c80000;
         }
 
         #CloseButton {
@@ -560,6 +560,22 @@ class TrayApp(QMainWindow):
 
         self.tray_menu = QMenu()
 
+        self.tray_menu.setStyleSheet("""
+            QMenu {
+                background-color: #f7Fbff;
+                border: 1px solid #444;
+                color: black;
+            }
+
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 8px;
+            }
+
+            QMenu::item:selected {
+                background-color: #468ce1;
+            } """)
+
         self.show_action = QAction("Show Window", self)
         self.interrupt_action = QAction("Interrupt Translation", self)
         self.quit_action = QAction("Quit", self)
@@ -604,7 +620,7 @@ class TrayApp(QMainWindow):
         pixmap = QPixmap(32, 32)
         pixmap.fill(Qt.GlobalColor.darkCyan)
         return QIcon(pixmap)
-    
+
     # Hides window and shows tray notification (optional).
     def hide_to_tray(self):
         self.hide()
@@ -631,7 +647,7 @@ class TrayApp(QMainWindow):
         event.ignore()  # Prevent actual close
         self.hide_to_tray()
 
-    # Updates tray icon based on server state
+    # Updates tray icon (and all other icons) based on server state
     def update_tray_icon(self):
     
         # Priority: Server stopped > Working > Idle
@@ -647,8 +663,30 @@ class TrayApp(QMainWindow):
             return
             
         try:
+            # Update tray icon
             self.tray_icon.setIcon(QIcon(icon_path))
             self._current_tray_icon = icon_path
+            # Update in-app status icon
+            pixmap = QPixmap(icon_path)
+            self.icon_label.setPixmap(
+                pixmap.scaled(
+                    72,
+                    72,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            )
+            # Update window title bar icon
+            self.title_icon.setPixmap(
+                pixmap.scaled(
+                    26, 26,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            )
+            # Update taskbar icon
+            self.setWindowIcon(QIcon(icon_path))
+
         except Exception as e:
             print(f"[TrayIcon] Failed to load {icon_path}: {e}")
 

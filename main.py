@@ -107,6 +107,8 @@ if __name__ == "__main__":
 
     # Initialize option window (tray)
     main_windows.append(TrayApp())
+    main_windows[1].raise_()
+    main_windows[1].activateWindow()
     main_windows[1].show()
 
     # Initialize worker & thread

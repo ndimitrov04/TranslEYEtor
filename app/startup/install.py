@@ -195,6 +195,20 @@ def app_initialization():
         cache_dir=".model_cache"
     )
 
+    # Download EasyOCR supported models
+    print("Preparing EasyOCR latin dictionary...")
+    easy_reader_latin = easyocr.Reader(['en', 'fr', 'de', 'es', 'it'])
+    print("Preparing EasyOCR cyrillic dictionary...")
+    easy_reader_cyrillic = easyocr.Reader(["ru", "rs_cyrillic", "be", "bg", "uk", "mn", "en"])
+    print("Preparing EasyOCR arabic dictionary...")
+    easy_reader_arabic = easyocr.Reader(['ar', 'fa', 'ur', 'en'])
+    print("Preparing EasyOCR chinese dictionary...")
+    easy_reader_chinese = easyocr.Reader(['ch_sim', 'en'])
+    print("Preparing EasyOCR japanese dictionary...")
+    easy_reader_japanese = easyocr.Reader(['ja', 'en'])
+    print("Preparing EasyOCR korean dictionary...")
+    easy_reader_korean = easyocr.Reader(['ko', 'en'])
+    
     gpu_availability = not no_gpu
 
     # Write first run var results to config.json file.
