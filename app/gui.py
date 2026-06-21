@@ -716,6 +716,7 @@ class TrayApp(QMainWindow):
 
     def quit_app(self):
         print("Closing TranslEYEtor...")
+        self.tray_icon.hide()
         import psutil
         for p in psutil.Process(os.getpid()).children(recursive=True):
             p.kill()
