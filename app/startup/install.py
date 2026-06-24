@@ -152,6 +152,7 @@ def app_initialization():
         install("pyautogui")        # Mouse macros, screenshots
         install("keyboard")         # Keyboard macros and detection
         install("PyQt6")            # GUI library
+        install("psutil")
         # ...
         print("All necessary dependencies are present...")
     except Exception:
@@ -166,6 +167,7 @@ def app_initialization():
     # Utilities
     import pyautogui
     import keyboard
+    import psutil
     # PyQt6 dependencies
     from PyQt6.QtCore import (Qt, QObject, QThread, QSize, QTimer, 
                             QPropertyAnimation, QEasingCurve, pyqtProperty, pyqtSignal)
